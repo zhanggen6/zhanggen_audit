@@ -1,0 +1,234 @@
+{% extends 'index.html' %}
+
+
+
+{% block content-container %}
+    {#    {% csrf_token %}#}
+    <div id="page-title">
+        <h1 class="page-header text-overflow">主机列表</h1>
+
+        <!--Searchbox-->
+        <div class="searchbox">
+            <div class="input-group custom-search-form">
+                <input type="text" class="form-control" placeholder="Search..">
+                <span class="input-group-btn">
+                    <button class="text-muted" type="button"><i class="pli-magnifi-glass"></i></button>
+                </span>
+            </div>
+        </div>
+    </div>
+    <!--~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~-->
+    <!--End page title-->
+    <!--Breadcrumb-->
+    <!--~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~-->
+    <ol class="breadcrumb">
+        <li><a href="#">Home</a></li>
+        <li><a href="#">Library</a></li>
+        <li class="active">主机列表</li>
+    </ol>
+    <!--~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~-->
+    <!--End breadcrumb-->
+
+    <div id="page-content">
+        <div class="panel col-lg-3">
+            <div class="panel-heading">
+                <h3 class="panel-title">主机组 <span id="selected_hosts"></span></h3>
+            </div>
+            <div class="panel-body">
+
+                <ul class="list-group" id="host_groups">
+                    {% for group in  request.user.account.host_groups.all %}
+
+                        <li class="list-group-item "><span
+                                class="badge badge-success">{{ group.host_user_binds.count }}</span>
+                            <input type="checkbox" onclick="CheckAll(this)">
+                            <a onclick="DisplayHostList(this)">{{ group.name }}</a>
+                            <!--点击组名，组名下的 主机列表通过toggleclass 展示/隐藏 -->
+                            <ul class="hide">
+                                {% for bind_host in group.host_user_binds.all %}
+                                    <li><input onclick="ShowCheckedHostCount()" type="checkbox"
+                                               value="{{ bind_host.id }}">{{ bind_host.host.ip_addr }}</li>
+                                {% endfor %}
+                            </ul>
+                        </li>
+
+                    {% endfor %}
+                    <li class="list-group-item "><span
+                            class="badge badge-success">{{ request.user.account.host_user_binds.count }}</span>
+                        <input type="checkbox" onclick="CheckAll(this)">
+                        <a onclick="DisplayHostList(this)">未分组主机</a>
+                        <ul class="hide">
+                            {% for bind_host in request.user.account.host_user_binds.all %}
+                                <li><input onclick="ShowCheckedHostCount()" type="checkbox"
+                                           value="{{ bind_host.id }}">{{ bind_host.host.ip_addr }}</li>
+                            {% endfor %}
+                        </ul>
+                    </li>
+
+                </ul>
+
+
+            </div>
+        </div>
+
+        <div class="col-lg-9">
+            <div class="panel">
+                <div class="panel-heading">
+                    <h3 class="panel-title">命令</h3>
+                </div>
+                <div class="panel-body">
+                    <textarea class="form-control" id="cmd"></textarea>
+                    <button onclick="PostTask('cmd')" class="btn btn-info pull-right">执行</button>
+                    <button class="btn btn-danger" onclick="End()">终止</button>
+
+                </div>
+
+            </div>
+
+            <div id="task_result_panel" class="panel">
+                <div class="panel-heading">
+                    <h3 class="panel-title">任务结果</h3>
+                </div>
+                <div class="panel-body">
+                    <div class="progress">
+                        <div id='task_progress' style="width: 0%;" class="progress-bar progress-bar-info"></div>
+                    </div>
+                    <div id="task_result"></div>
+
+                </div>
+            </div>
+
+        </div>
+
+
+        <script>
+            function DisplayHostList(self) {
+                $(self).next().toggleClass("hide");
+            }
+
+            function CheckAll(self) {
+                console.log($(self).prop('checked'));
+                $(self).parent().find("ul :checkbox").prop('checked', $(self).prop('checked'));
+
+                ShowCheckedHostCount()
+            }
+
+            function ShowCheckedHostCount() {
+                var selected_host_count = $("#host_groups ul").find(":checked").length;
+                console.log(selected_host_count);
+                $("#selected_hosts").text(selected_host_count);
+                return selected_host_count
+            }
+
+
+            function GetTaskResult(task_id, task_timeout, task_type) {
+                $.getJSON("{% url 'get_task_result' %}", {'task_id': task_id}, function (callback) {
+                    console.log(callback);
+                    var result_ele = '';
+                    var all_task_finished = true;   //全部完成flag
+                    var finished_task_count = 0;   //已完成的任务数量
+                    $.each(callback, function (index, i) {
+                        var p_ele = "<p>" + i.host_user_bind__host__hostname + "(" + i.host_user_bind__host__ip_addr + ") ------" +
+                            i.status + "</p>";
+                        var res_ele = "<pre>" + i.result + "</pre>"; //<pre> 标签按后端格式显示数据
+
+                        var single_result = p_ele + res_ele;
+                        result_ele += single_result;
+
+                        if (i.status == 3) {
+                            all_task_finished = false;
+                        } else {
+                            //task not finished yet
+                            finished_task_count += 1;
+
+                        }
+
+                    });
+
+                    if (task_timeout_counter < task_timeout) {
+                        task_timeout_counter += 2;
+                    }
+                    else {
+                        all_task_finished = true
+                    }
+                    if (all_task_finished) {   //完成！
+
+                        clearInterval(result_timer);
+                        var unexecuted = callback.length - finished_task_count;
+                        $.niftyNoty({   //提示超时
+                            type: 'danger',
+                            container: '#task_result_panel',
+                            html: '<h4 id="Prompt">' + '执行：' + callback.length + '  ' + '完成：' + finished_task_count + '  ' + '失败：' + unexecuted + '</h4>',
+                            closeBtn: false
+                        });
+                        console.log("timmer canceled....");
+                        console.log('------------------------------->' + task_type)
+                    }
+                    $("#task_result").html(result_ele);
+
+                    var total_finished_percent = parseInt(finished_task_count / callback.length * 100);
+                    $("#task_progress").text(total_finished_percent + "%");
+                    $("#task_progress").css("width", total_finished_percent + "%");
+
+
+                });//end getJSON
+
+            }
+
+
+            function PostTask(task_type) {
+                //1. 验证主机列表已选，命令已输入
+                //2. 提交任务到后台
+                $('.alert').remove();
+                var selected_host_ids = [];
+                var selected_host_eles = $("#host_groups ul").find(":checked");
+                $.each(selected_host_eles, function (index, ele) {
+                    selected_host_ids.push($(ele).val())
+                });
+                console.log(selected_host_ids);
+                if (selected_host_ids.length == 0) {
+                    alert("主机未选择!");
+                    return false;
+                }
+                var cmd_text = $.trim($("#cmd").val());
+                if (cmd_text.length == 0) {
+                    alert("未输入命令!");
+                    return false;
+
+                }
+
+
+                var task_data = {
+                    'task_type': task_type,
+                    'selected_host_ids': selected_host_ids,
+                    'cmd': cmd_text
+                };
+
+                $.post("{% url 'multitask' %}", {
+                        'csrfmiddlewaretoken': "{{ csrf_token }}",
+                        'task_data': JSON.stringify(task_data)
+                    },
+                    function (callback) {
+                        console.log(callback);// task id
+                        var callback = JSON.parse(callback);
+
+                        task_timeout_counter = 0;// add 2 during each call of GetTaskResult
+
+                        GetTaskResult(callback.task_id, callback.timeout, callback.task_type); //那批量任务ID 去获取子任务的进展！那超时时间做对比
+
+                        result_timer = setInterval(function () {
+                            GetTaskResult(callback.task_id, callback.timeout, callback.task_type)
+                        }, 2000);
+
+                        //diplay download file btn
+                        $("#file-download-btn").removeClass("hide").attr('href', "{% url 'task_file_download' %}?task_id=" + callback.task_id);
+
+
+                    });//end post
+
+
+            }
+
+            {% include 'components/end_tatsk_js.html' %}
+        </script>
+{% endblock %}

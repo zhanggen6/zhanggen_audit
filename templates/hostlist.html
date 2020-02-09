@@ -1,0 +1,123 @@
+{% extends 'index.html' %}
+
+{% block content-container %}
+    <div id="page-title">
+        <h1 class="page-header text-overflow">主机列表</h1>
+
+        <!--Searchbox-->
+        <div class="searchbox">
+            <div class="input-group custom-search-form">
+                <input type="text" class="form-control" placeholder="Search..">
+                <span class="input-group-btn">
+                    <button class="text-muted" type="button"><i class="pli-magnifi-glass"></i></button>
+                </span>
+            </div>
+        </div>
+    </div>
+    <!--~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~-->
+    <!--End page title-->
+        <!--Breadcrumb-->
+    <!--~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~-->
+    <ol class="breadcrumb">
+        <li><a href="#">Home</a></li>
+        <li><a href="#">Library</a></li>
+        <li class="active">主机列表</li>
+    </ol>
+    <!--~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~-->
+    <!--End breadcrumb-->
+
+    <div id="page-content">
+
+        <div class="panel col-lg-3">
+            <div class="panel-heading">
+                <h3 class="panel-title">主机组</h3>
+            </div>
+            <div class="panel-body">
+                <ul class="list-group">
+                {% for group in  request.user.account.host_groups.all %}
+
+                    <li class="list-group-item " onclick="GetHostlist({{ group.id }},this)"><span class="badge badge-success">{{ group.host_user_binds.count }}</span>{{ group.name }}</li>
+                {% endfor %}
+                    <li class="list-group-item " onclick="GetHostlist(-1,this)"> <span class="badge badge-success">{{ request.user.account.host_user_binds.count }}</span>未分组主机</li>
+
+                </ul>
+            </div>
+        </div>
+        <div class="panel col-lg-9">
+            <div class="panel-heading">
+                <h3 class="panel-title">主机列表</h3>
+            </div>
+            <div class="panel-body">
+
+                <div class="table-responsive">
+                    <table class="table table-striped">
+                        <thead>
+                            <tr>
+                                <th>Hostname</th>
+                                <th>IP</th>
+                                <th>IDC</th>
+                                <th>Port</th>
+                                <th>Username</th>
+                                <th>Login</th>
+                                <th>Token</th>
+                            </tr>
+                        </thead>
+                        <tbody id="hostlist">
+{#                            <tr>#}
+{#                                <td><a href="#fakelink" class="btn-link">Order #53451</a></td>#}
+{#                                <td>Scott S. Calabrese</td>#}
+{#                                <td>$24.98</td>#}
+{#                            </tr>#}
+
+                        </tbody>
+                    </table>
+                </div>
+
+            </div>
+        </div>
+
+    </div>
+
+
+
+<script>
+
+function GetHostlist(gid,self) {
+
+    $.get("{% url 'get_host_list' %}",{'gid':gid},function(callback){
+
+        var data  = JSON.parse(callback);
+        console.log(data);
+        var trs = '';
+        $.each(data,function (index,i) {
+            var tr = "<tr><td>" + i.host__hostname + "</td><td>" + i.host__ip_addr +"</td><td>" + i.host__idc__name
+                    +"</td><td>" + i.host__port  + "</td><td>" + i.host_user__username+ "</td><td><a class='btn btn-sm btn-info' onclick=GetToken(this,'"+i.id +"')>Token</a><a href='http://192.168.226.135:4200/' class='btn btn-sm btn-info'')>login</a></td><td ></td></tr>";
+            trs += tr
+
+        });
+        $("#hostlist").html(trs);
+
+
+
+    });//end get
+    $(self).addClass("active").siblings().removeClass('active');
+
+}
+
+function GetToken(self,bind_host_id) {
+    $.post(
+        '{% url "get_token" %}',     //通过url别名渲染url
+        {'bind_host_id':bind_host_id,'csrfmiddlewaretoken':"{{ csrf_token }}"},//请求携带的参数
+        function (callback) {          //回调函数
+            console.log(callback);
+            var data = JSON.parse(callback); //django响应的数据
+            $(self).parent().next().text(data.token);
+        }
+
+        )
+}
+
+
+
+</script>
+{% endblock %}

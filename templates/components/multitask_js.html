@@ -1,0 +1,156 @@
+<script>
+    function DisplayHostList(self) {
+        $(self).next().toggleClass("hide");
+    }
+
+    function CheckAll(self) {
+        console.log($(self).prop('checked'));
+        $(self).parent().find("ul :checkbox").prop('checked', $(self).prop('checked'));
+
+        ShowCheckedHostCount()
+    }
+
+    function ShowCheckedHostCount() {
+        var selected_host_count = $("#host_groups ul").find(":checked").length
+        console.log(selected_host_count);
+        $("#selected_hosts").text(selected_host_count);
+        return selected_host_count
+    }
+
+
+    function GetTaskResult(task_id, task_timeout,task_type) {
+        $.getJSON("{% url 'get_task_result' %}", {'task_id': task_id}, function (callback) {
+
+            console.log(callback);
+
+            var result_ele = '';
+            var all_task_finished = true;
+            var finished_task_count = 0;
+            $.each(callback, function (index, i) {
+                var p_ele = "<p>" + i.host_user_bind__host__hostname + "(" + i.host_user_bind__host__ip_addr + ") ------" +
+                    i.status + "</p>";
+                var res_ele = "<pre>" + i.result + "</pre>";
+
+                var single_result = p_ele + res_ele;
+                result_ele += single_result;
+
+                //check if ths sub task is finished.
+                if (i.status == 3) {
+                    all_task_finished = false;
+                } else {
+                    //task not finished yet
+                    finished_task_count += 1;
+                }
+
+            });//end each
+            //check if the task_timer_count < task_timeout, otherwise it means the task is timedout, setInterval function need to be cancelled
+            if (task_timeout_counter < task_timeout) {
+                // not timed out yet
+                task_timeout_counter += 2;
+
+            } else {
+                all_task_finished = true; // set all task to be finished ,because it 's already reached the global timeout
+            }
+
+            if (all_task_finished) {
+                clearInterval(result_timer);
+                var unexecuted = callback.length - finished_task_count;
+                $.niftyNoty({
+                    type: 'danger',
+                    container: '#task_result_panel',
+                    html: '<h4 id="Prompt">' + '执行：' + callback.length + '  ' + '完成：' + finished_task_count + '  ' + '失败：' + unexecuted + '</h4>',
+                    closeBtn: false
+                });
+                console.log("timmer canceled....");
+                if(task_type==1 && finished_task_count > 0){
+                     $("#file-download-btn").removeClass("hide").attr('href', "{% url 'task_file_download' %}?task_id=" + callback.task_id);
+                }
+
+                //定时获取结果 执行完毕之后，显示下载文件到本地按钮；让用户下载文件到本地！
+                if (finished_task_count > 0) {
+                    $("#file-download-btn").removeClass("hide").attr('href', "{% url 'task_file_download' %}?task_id=" + callback.task_id);
+                }
+            }
+
+
+            $("#task_result").html(result_ele);
+            // set progress bar
+            var total_finished_percent = parseInt(finished_task_count / callback.length * 100);
+            $("#task_progress").text(total_finished_percent + "%");
+            $("#task_progress").css("width", total_finished_percent + "%");
+        });//end getJSON
+
+    }
+
+
+    function PostTask(task_type) {
+        //1. 验证主机列表已选，命令已输入
+        //2. 提交任务到后台
+        $('.alert').remove();
+
+        var selected_host_ids = [];
+        var selected_host_eles = $("#host_groups ul").find(":checked")
+        $.each(selected_host_eles, function (index, ele) {
+            selected_host_ids.push($(ele).val())
+        });
+        console.log(selected_host_ids)
+        if (selected_host_ids.length == 0) {
+            alert("主机未选择!")
+            return false
+        }
+
+        if (task_type == 'cmd') {
+            var cmd_text = $.trim($("#cmd").val())
+            if (cmd_text.length == 0) {
+                alert("未输入命令!")
+                return false
+
+            }
+        } else {
+            //file_transfer
+            var remote_path = $("#remote_path").val();
+            if ($.trim(remote_path).length == 0) {
+                alert("必须输入1个远程路径")
+                return false
+            }
+        }
+
+
+        var task_data = {
+            'task_type': task_type,
+            'selected_host_ids': selected_host_ids,
+            //'cmd': cmd_text
+        };
+        if (task_type == 'cmd') {
+            task_data['cmd'] = cmd_text
+
+        } else {
+
+            var file_transfer_type = $("select[name='transfer-type']").val();
+            task_data['file_transfer_type'] = file_transfer_type;
+            task_data['random_str'] = "{{ random_str }}";
+            task_data['remote_path'] = $("#remote_path").val();
+
+        }
+
+
+        $.post("{% url 'multitask' %}", {
+                'csrfmiddlewaretoken': "{{ csrf_token }}",
+                'task_data': JSON.stringify(task_data)
+            },
+            function (callback) {
+                console.log(callback);// task id
+
+                var callback = JSON.parse(callback); //返回任务ID
+
+                GetTaskResult(callback.task_id, callback.timeout,callback.task_type);
+                task_timeout_counter = 0; // 间隔2分钟 去后台获取该任务的 执行结果！
+                result_timer = setInterval(function () {
+                    GetTaskResult(callback.task_id, callback.timeout,callback.task_type)
+                }, 2000);
+
+
+            });//end post
+
+    }
+</script>
